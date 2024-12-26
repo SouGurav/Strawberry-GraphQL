@@ -1,6 +1,16 @@
 import strawberry
 from .models import Organization, Employee
 from django.db.models import Q
+from django.contrib.auth import authenticate
+from .views import generate_jwt, decode_jwt
+import strawberry
+from strawberry.types import Info  
+
+
+@strawberry.type
+class AuthPayload:
+    token: str
+    username: str
 
 @strawberry.django.type(Organization)
 class OrganizationType:
@@ -54,7 +64,14 @@ class Query:
     employees: list[EmployeeType] = strawberry.django.field()
 
     @strawberry.field
-    def get_organization_by_id(id: int) -> OrganizationType:
+    def get_organization_by_id(self, info: Info, id: int) -> "OrganizationType":
+        # Extract token from headers
+        auth_header = info.context.request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise Exception("Authorization header missing or malformed.")
+        
+        token = auth_header.split(" ")[1]  # Extract token
+        user = decode_jwt(token)  # Decode and verify token
         return Organization.objects.get(ORD_ID=id)
 
     @strawberry.field
@@ -127,5 +144,14 @@ class Mutation:
             return f"Employee with ID {employee_id} has been deleted."
         except Employee.DoesNotExist:
             raise Exception(f"Employee with ID {employee_id} not found.")
+        
+    @strawberry.mutation
+    def login(self, username: str, password: str) -> AuthPayload:
+        user = authenticate(username=username, password=password)
+        if not user:
+            raise Exception("Invalid username or password")
+
+        token = generate_jwt(user)
+        return AuthPayload(token=token, username=user.username)
 
 schema = strawberry.Schema(query=Query, mutation=Mutation)
