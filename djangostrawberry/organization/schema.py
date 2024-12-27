@@ -1,6 +1,16 @@
 import strawberry
 from .models import Organization, Employee
 from django.db.models import Q
+from django.contrib.auth import authenticate
+from .views import generate_jwt, decode_jwt
+import strawberry
+from strawberry.types import Info  
+
+
+@strawberry.type
+class AuthPayload:
+    token: str
+    username: str
 
 @strawberry.django.type(Organization)
 class OrganizationType:
@@ -54,16 +64,35 @@ class Query:
     employees: list[EmployeeType] = strawberry.django.field()
 
     @strawberry.field
-    def get_organization_by_id(id: int) -> OrganizationType:
+    def get_organization_by_id(self, info: Info, id: int) -> OrganizationType:
+        auth_header = info.context.request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise Exception("Authorization header missing")
+        
+        token = auth_header.split(" ")[1]  # Extract token
+        user = decode_jwt(token)  # Decode and verify token
         return Organization.objects.get(ORD_ID=id)
 
     @strawberry.field
-    def get_employee_by_id(employee_id: int) -> EmployeeType:
+    def get_employee_by_id(self, info: Info, employee_id: int) -> EmployeeType:
+        auth_header = info.context.request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise Exception("Authorization header missing")
+        
+        token = auth_header.split(" ")[1]  # Extract token
+        user = decode_jwt(token)  # Decode and verify token
+
         return Employee.objects.get(employee_id=employee_id)
     
     @strawberry.field
-    def filtered_employees(self,organization_id: int | None = None,joining_date_after: str | None = None,
+    def filtered_employees(self,info: Info, organization_id: int | None = None,joining_date_after: str | None = None,
         joining_date_before: str | None = None) -> list[EmployeeType]:
+        auth_header = info.context.request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise Exception("Authorization header missing")
+        
+        token = auth_header.split(" ")[1]  # Extract token
+        user = decode_jwt(token)
         filters = {} #define empty dictionary
         if organization_id:
             filters["organization_id"] = organization_id
@@ -81,7 +110,13 @@ class Query:
 @strawberry.type
 class Mutation:
     @strawberry.mutation
-    def create_employee(self, input: EmployeeInput) -> EmployeeType:
+    def create_employee(self, info: Info, input: EmployeeInput) -> EmployeeType:
+        auth_header = info.context.request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise Exception("Authorization header missing")
+        
+        token = auth_header.split(" ")[1]  # Extract token
+        user = decode_jwt(token)
         organization = Organization.objects.get(pk=input.organization_id)
         employee = Employee.objects.create(
             name=input.name,
@@ -127,5 +162,14 @@ class Mutation:
             return f"Employee with ID {employee_id} has been deleted."
         except Employee.DoesNotExist:
             raise Exception(f"Employee with ID {employee_id} not found.")
+        
+    @strawberry.mutation
+    def login(self, username: str, password: str) -> AuthPayload:
+        user = authenticate(username=username, password=password)
+        if not user:
+            raise Exception("Invalid username or password")
+
+        token = generate_jwt(user)
+        return AuthPayload(token=token, username=user.username)
 
 schema = strawberry.Schema(query=Query, mutation=Mutation)
