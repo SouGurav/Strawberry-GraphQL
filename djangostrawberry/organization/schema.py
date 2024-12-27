@@ -64,23 +64,35 @@ class Query:
     employees: list[EmployeeType] = strawberry.django.field()
 
     @strawberry.field
-    def get_organization_by_id(self, info: Info, id: int) -> "OrganizationType":
-        # Extract token from headers
+    def get_organization_by_id(self, info: Info, id: int) -> OrganizationType:
         auth_header = info.context.request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
-            raise Exception("Authorization header missing or malformed.")
+            raise Exception("Authorization header missing")
         
         token = auth_header.split(" ")[1]  # Extract token
         user = decode_jwt(token)  # Decode and verify token
         return Organization.objects.get(ORD_ID=id)
 
     @strawberry.field
-    def get_employee_by_id(employee_id: int) -> EmployeeType:
+    def get_employee_by_id(self, info: Info, employee_id: int) -> EmployeeType:
+        auth_header = info.context.request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise Exception("Authorization header missing")
+        
+        token = auth_header.split(" ")[1]  # Extract token
+        user = decode_jwt(token)  # Decode and verify token
+
         return Employee.objects.get(employee_id=employee_id)
     
     @strawberry.field
-    def filtered_employees(self,organization_id: int | None = None,joining_date_after: str | None = None,
+    def filtered_employees(self,info: Info, organization_id: int | None = None,joining_date_after: str | None = None,
         joining_date_before: str | None = None) -> list[EmployeeType]:
+        auth_header = info.context.request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise Exception("Authorization header missing")
+        
+        token = auth_header.split(" ")[1]  # Extract token
+        user = decode_jwt(token)
         filters = {} #define empty dictionary
         if organization_id:
             filters["organization_id"] = organization_id
@@ -98,7 +110,13 @@ class Query:
 @strawberry.type
 class Mutation:
     @strawberry.mutation
-    def create_employee(self, input: EmployeeInput) -> EmployeeType:
+    def create_employee(self, info: Info, input: EmployeeInput) -> EmployeeType:
+        auth_header = info.context.request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise Exception("Authorization header missing")
+        
+        token = auth_header.split(" ")[1]  # Extract token
+        user = decode_jwt(token)
         organization = Organization.objects.get(pk=input.organization_id)
         employee = Employee.objects.create(
             name=input.name,
